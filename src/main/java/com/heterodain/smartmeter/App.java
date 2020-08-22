@@ -40,7 +40,7 @@ public class App
     private static final byte[] ECHONET_LITE_FRAME = { 0x10, (byte) 0x81, 0x00, 0x01, 0x05, (byte) 0xFF, 0x01, 0x02, (byte) 0x88, 0x01, 0x62, 0x02, (byte) 0xE7, 0x00, (byte) 0xEA, 0x00 };
 
     public static void main( final String[] args ) throws Exception {
-        SerialPort serial = SerialPort.getCommPort("COM3");
+        SerialPort serial = SerialPort.getCommPort("ttyUSB0"); // COM3
         serial.setBaudRate(115200);
         serial.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 3000, 3000);
         if (!serial.openPort()) {
