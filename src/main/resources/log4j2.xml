@@ -1,13 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="WARN">
+  <properties>
+    <property name="logLayout">%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n</property>
+  </properties>
   <Appenders>
     <Console name="Console" target="SYSTEM_OUT">
-      <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
+      <PatternLayout pattern="${logLayout}"/>
     </Console>
+    <File name="file" fileName="application.log">
+      <ThresholdFilter level="warn"/>
+      <PatternLayout pattern="${logLayout}"/>
+    </File>
   </Appenders>
   <Loggers>
+    <Logger name="com.heterodain.smartmeter" level="debug" />
     <Root level="info">
       <AppenderRef ref="Console"/>
+      <AppenderRef ref="file"/>
     </Root>
   </Loggers>
 </Configuration>
