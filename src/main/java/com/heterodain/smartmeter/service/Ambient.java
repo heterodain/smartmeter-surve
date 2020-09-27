@@ -12,7 +12,6 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.Data;
@@ -94,7 +93,7 @@ public class Ambient {
      * @return 1日分のデータ
      * @throws IOException
      */
-    public JsonNode read(LocalDate date) throws IOException {
+    public List<ReadData> read(LocalDate date) throws IOException {
         // HTTP GET
         var url = "http://54.65.206.59/api/v2/channels/" + channelId + "/data?readKey=" + readKey + "&date="
                 + date.format(DateTimeFormatter.ISO_DATE);
@@ -110,7 +109,8 @@ public class Ambient {
         }
 
         try (var is = conn.getInputStream()) {
-            return om.readTree(is);
+            return om.readValue(is, new TypeReference<List<ReadData>>() {
+            });
         }
     }
 
