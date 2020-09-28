@@ -12,3 +12,6 @@ https://youtu.be/4SDXv0iHaIc
 
 Part.4 ラズパイ編
 https://youtu.be/L80hP5f4zZ8
+
+Part.5 運用編
+https://youtu.be/Pbwp5v2TdWs
