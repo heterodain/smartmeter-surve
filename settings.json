@@ -1,0 +1,12 @@
+{
+  "smartMeter": {
+    "comPort": "ttyUSB0",
+    "brouteId": "************",
+    "broutePassword": "*********************************"
+  },
+  "ambient": {
+    "channelId": 99999,
+    "readKey": "****************",
+    "writeKey": "****************"
+  }
+}

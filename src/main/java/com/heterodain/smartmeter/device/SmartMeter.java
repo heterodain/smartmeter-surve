@@ -13,11 +13,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import lombok.Data;
 import lombok.var;
 import lombok.extern.slf4j.Slf4j;
 
 import com.fazecast.jSerialComm.SerialPort;
+import com.heterodain.smartmeter.model.Power;
 
 @Slf4j
 public class SmartMeter implements Closeable {
@@ -267,18 +267,5 @@ public class SmartMeter implements Closeable {
         var bytes = data.getBytes(StandardCharsets.ISO_8859_1);
         bytes = ByteBuffer.allocate(bytes.length + frame.length).put(bytes).put(frame).array();
         serial.writeBytes(bytes, bytes.length);
-    }
-
-    /**
-     * 電力情報
-     */
-    @Data
-    public static class Power {
-        // 瞬時電力(W)
-        private Long instantPower;
-        // R相電流(0.1A)
-        private Long instantRAmp;
-        // T相電流(0.1A)
-        private Long instantTAmp;
     }
 }

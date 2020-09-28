@@ -1,13 +1,15 @@
 package com.heterodain.smartmeter;
 
+import java.io.File;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heterodain.smartmeter.device.SmartMeter;
-import com.heterodain.smartmeter.device.SmartMeter.Power;
+import com.heterodain.smartmeter.model.Power;
+import com.heterodain.smartmeter.model.Settings;
 import com.heterodain.smartmeter.service.Ambient;
 
 import lombok.var;
@@ -18,20 +20,20 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class App {
-    private static final String COM_PORT = "ttyUSB0";
-
-    private static final int AMBIENT_CHANNEL = 999999;
-    private static final String AMBIENT_WRITE_KEY = "************";
-
-    private static final String BROUTE_ID = "*********************************";
-    private static final String BROUTE_PASSWORD = "************";
-
+    // バックグラウンドタスクを動かすためのスレッドプール
     private static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(2);
 
     public static void main(final String[] args) throws Exception {
-        var ambient = new Ambient(AMBIENT_CHANNEL, "TODO", AMBIENT_WRITE_KEY);
+        var om = new ObjectMapper();
+        var settings = om.readValue(new File("settings.json"), Settings.class);
 
-        try (var smartMeter = new SmartMeter(COM_PORT, BROUTE_ID, BROUTE_PASSWORD)) {
+        var ambientSettings = settings.getAmbient();
+        var ambient = new Ambient(ambientSettings.getChannelId(), ambientSettings.getReadKey(),
+                ambientSettings.getWriteKey());
+
+        var smSettings = settings.getSmartMeter();
+        try (var smartMeter = new SmartMeter(smSettings.getComPort(), smSettings.getBrouteId(),
+                smSettings.getBroutePassword())) {
             smartMeter.init();
             smartMeter.connect();
 
@@ -45,7 +47,7 @@ public class App {
                         powers.add(power);
                     }
 
-                } catch (InterruptedException e) {
+                } catch (InterruptedException ignore) {
                     // NOP
                 } catch (Exception e) {
                     log.warn("スマートメーターへのアクセスに失敗しました。", e);
@@ -86,18 +88,18 @@ public class App {
             };
             threadPool.scheduleWithFixedDelay(sendAmbientTask, 1, 1, TimeUnit.MINUTES);
 
-            // SIGINT(Ctrl + C)で止められるまで待つ
+            // プログラムが止められるまで待つ : SIGINT(Ctrl + C)
             var wait = new Object();
             synchronized (wait) {
                 try {
                     wait.wait();
-                } catch (InterruptedException e) {
+                } catch (InterruptedException ignore) {
                     // NOP
                 }
             }
-
-            threadPool.shutdown();
-            threadPool.awaitTermination(15, TimeUnit.SECONDS);
         }
+
+        threadPool.shutdown();
+        threadPool.awaitTermination(15, TimeUnit.SECONDS);
     }
 }
