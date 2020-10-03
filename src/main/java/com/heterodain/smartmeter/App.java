@@ -55,10 +55,10 @@ public class App {
             };
             threadPool.scheduleWithFixedDelay(readSmartMeterTask, 0, 10, TimeUnit.SECONDS);
 
-            // 1分毎にAmbientにデータ送信
+            // 2分毎にAmbientにデータ送信
             Runnable sendAmbientTask = () -> {
                 try {
-                    Double rw, tw;
+                    Double rw, tw, w30;
                     synchronized (powers) {
                         // R相の1分間平均電力(W)算出
                         rw = powers.stream().mapToDouble(p -> {
@@ -78,15 +78,19 @@ public class App {
                             return a == 0 ? 0D : w * t / a;
                         }).average().orElse(0D);
 
+                        // 30分積算電力
+                        w30 = powers.stream().filter(p -> p.getAccumu30Power() != null)
+                                .map(p -> (double) p.getAccumu30Power()).findFirst().orElse(null);
+
                         powers.clear();
                     }
-                    ambient.send(rw, tw);
+                    ambient.send(rw, tw, w30);
 
                 } catch (Exception e) {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);
                 }
             };
-            threadPool.scheduleWithFixedDelay(sendAmbientTask, 1, 1, TimeUnit.MINUTES);
+            threadPool.scheduleWithFixedDelay(sendAmbientTask, 2, 2, TimeUnit.MINUTES);
 
             // プログラムが止められるまで待つ : SIGINT(Ctrl + C)
             var wait = new Object();

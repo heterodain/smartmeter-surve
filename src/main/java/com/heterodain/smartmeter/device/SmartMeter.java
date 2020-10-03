@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -19,6 +20,9 @@ import lombok.extern.slf4j.Slf4j;
 import com.fazecast.jSerialComm.SerialPort;
 import com.heterodain.smartmeter.model.Power;
 
+import org.apache.commons.codec.DecoderException;
+import org.apache.commons.codec.binary.Hex;
+
 @Slf4j
 public class SmartMeter implements Closeable {
     // コマンド
@@ -31,8 +35,7 @@ public class SmartMeter implements Closeable {
     private static final String SKSENDTO_COMMAND = "SKSENDTO 1 %s 0E1A 1 %04x ";
 
     // Echonet Lite電文
-    private static final byte[] ECHONET_LITE_FRAME = { 0x10, (byte) 0x81, 0x00, 0x01, 0x05, (byte) 0xFF, 0x01, 0x02,
-            (byte) 0x88, 0x01, 0x62, 0x02, (byte) 0xE7, 0x00, (byte) 0xE8, 0x00 };
+    private static final String ECHONET_LITE_FRAME = "1081000105FF010288016203E700E800EA00";
 
     // シリアルポート名
     private String serialPortName;
@@ -50,6 +53,11 @@ public class SmartMeter implements Closeable {
     private Map<String, String> smartMeterInfo = new HashMap<>();
     // スマートメーターのIPV6アドレス
     private String address;
+
+    // 最後に取得した30分積算値の時刻
+    private LocalDateTime lastAccumu30Time;
+    // 最後に取得した30分積算値
+    private Long lastAccumu30Power;
 
     /**
      * コンストラクタ
@@ -142,8 +150,9 @@ public class SmartMeter implements Closeable {
      * @return 電力情報
      * @throws IOException
      * @throws InterruptedException
+     * @throws DecoderException
      */
-    public Power getCurrentPower() throws IOException, InterruptedException {
+    public Power getCurrentPower() throws IOException, InterruptedException, DecoderException {
         writeEchonetLite(ECHONET_LITE_FRAME);
 
         Power result = null;
@@ -184,6 +193,22 @@ public class SmartMeter implements Closeable {
                             result.setInstantRAmp(Long.parseLong(epcData.substring(0, 4), 16));
                             result.setInstantTAmp(Long.parseLong(epcData.substring(4), 16));
                             // 1A単位でしか取得できない
+
+                        } else if ("EA".equals(epc)) {
+                            var year = Integer.parseInt(epcData.substring(0, 4), 16);
+                            var month = Integer.parseInt(epcData.substring(4, 6), 16);
+                            var day = Integer.parseInt(epcData.substring(6, 8), 16);
+                            var hour = Integer.parseInt(epcData.substring(8, 10), 16);
+                            var min = Integer.parseInt(epcData.substring(10, 12), 16);
+                            var sec = Integer.parseInt(epcData.substring(12, 14), 16);
+                            var time = LocalDateTime.of(year, month, day, hour, min, sec);
+                            var power = Long.parseLong(epcData.substring(14), 16) * 100;
+                            if (!time.equals(lastAccumu30Time)) {
+                                result.setAccumu30Time(lastAccumu30Time == null ? null : time);
+                                result.setAccumu30Power(lastAccumu30Power == null ? null : power - lastAccumu30Power);
+                                lastAccumu30Time = time;
+                                lastAccumu30Power = power;
+                            }
                         }
                     }
                 }
@@ -259,13 +284,15 @@ public class SmartMeter implements Closeable {
      * 
      * @param frame Echonet Lite電文
      * @throws IOException
+     * @throws DecoderException
      */
-    private void writeEchonetLite(byte[] frame) throws IOException {
-        var data = String.format(SKSENDTO_COMMAND, address, frame.length);
-        log.trace("Send: {}{}", data, Arrays.toString(frame));
+    private void writeEchonetLite(String frame) throws IOException, DecoderException {
+        var frameBytes = Hex.decodeHex(frame);
+        var data = String.format(SKSENDTO_COMMAND, address, frameBytes.length);
+        log.trace("Send: {}{}", data, frame);
 
         var bytes = data.getBytes(StandardCharsets.ISO_8859_1);
-        bytes = ByteBuffer.allocate(bytes.length + frame.length).put(bytes).put(frame).array();
+        bytes = ByteBuffer.allocate(bytes.length + frameBytes.length).put(bytes).put(frameBytes).array();
         serial.writeBytes(bytes, bytes.length);
     }
 }
