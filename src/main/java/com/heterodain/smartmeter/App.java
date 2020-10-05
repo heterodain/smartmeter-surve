@@ -114,7 +114,7 @@ public class App {
                 try {
                     List<Long> accumu30 = history.getAccumu30Powers();
                     long powerOfDay = accumu30.get(accumu30.size() - 1) - accumu30.get(0);
-                    ambient.send(history.getDate().atTime(0, 0, 0), (double) powerOfDay);
+                    ambient.send(history.getTime(), (double) powerOfDay);
 
                 } catch (Exception e) {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);

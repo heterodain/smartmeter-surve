@@ -8,6 +8,8 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -246,7 +248,8 @@ public class SmartMeter implements Closeable {
                         pos += epcSize * 2;
 
                         if ("E2".equals(epc)) {
-                            history.setDate(LocalDate.now().minusDays(beforeDays));
+                            history.setTime(LocalDateTime.now(ZoneId.of("UTC")).minusDays(beforeDays)
+                                    .truncatedTo(ChronoUnit.DAYS));
                             for (var epcDataPos = 4; epcDataPos < epcSize * 2; epcDataPos += 8) {
                                 history.getAccumu30Powers()
                                         .add(Long.parseLong(epcData.substring(epcDataPos, epcDataPos + 8), 16) * 100);

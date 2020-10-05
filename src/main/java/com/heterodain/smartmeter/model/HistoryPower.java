@@ -1,7 +1,7 @@
 package com.heterodain.smartmeter.model;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import lombok.Data;
@@ -11,8 +11,8 @@ import lombok.Data;
  */
 @Data
 public class HistoryPower {
-    // 日付
-    private LocalDate date;
+    // 日時
+    private LocalDateTime time;
     // 30分積算電力(Wh)
-    private List<Long> accumu30Powers;
+    private List<Long> accumu30Powers = new ArrayList<>();
 }
