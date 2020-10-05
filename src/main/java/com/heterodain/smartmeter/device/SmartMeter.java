@@ -40,9 +40,9 @@ public class SmartMeter implements Closeable {
 
     // Echonet Lite電文: 瞬時電力、瞬時電流、30分積算電力取得
     private static final String EL_READ_POWER_FRAME = "1081000105FF010288016203E700E800EA00";
-    // Echonet Lite電文: 積算履歴収集日１を1日に設定
-    private static final String EL_WRITE_HISTORY1_FRAME = "1081000105FF010288016001E50102";
-    // Echonet Lite電文: 積算履歴収集日１取得
+    // Echonet Lite電文: 積算履歴収集日１設定
+    private static final String EL_WRITE_HISTORY1_DAY_FRAME = "1081000105FF010288016001E501%02x";
+    // Echonet Lite電文: 積算電力量計測値履歴１取得
     private static final String EL_READ_HISTORY1_FRAME = "1081000105FF010288016201E200";
 
     // シリアルポート名
@@ -215,15 +215,17 @@ public class SmartMeter implements Closeable {
     }
 
     /**
-     * 前日の電力履歴取得
+     * 以前の電力履歴取得
      * 
+     * @param beforeDays 遡る日数
      * @return 電力履歴情報
      * @throws IOException
      * @throws InterruptedException
      * @throws DecoderException
      */
-    public synchronized HistoryPower getYesterdayPower() throws IOException, InterruptedException, DecoderException {
-        writeEchonetLite(EL_WRITE_HISTORY1_FRAME);
+    public synchronized HistoryPower getBeforeDayPower(int beforeDays)
+            throws IOException, InterruptedException, DecoderException {
+        writeEchonetLite(String.format(EL_WRITE_HISTORY1_DAY_FRAME, beforeDays));
         writeEchonetLite(EL_READ_HISTORY1_FRAME);
 
         HistoryPower result = processResponse(data -> {
@@ -244,7 +246,7 @@ public class SmartMeter implements Closeable {
                         pos += epcSize * 2;
 
                         if ("E2".equals(epc)) {
-                            history.setDate(LocalDate.now().minusDays(1));
+                            history.setDate(LocalDate.now().minusDays(beforeDays));
                             for (var epcDataPos = 4; epcDataPos < epcSize * 2; epcDataPos += 8) {
                                 history.getAccumu30Powers()
                                         .add(Long.parseLong(epcData.substring(epcDataPos, epcDataPos + 8), 16) * 100);
