@@ -103,7 +103,7 @@ public class App {
             Runnable aggregateTask = () -> {
                 HistoryPower history = null;
                 try {
-                    history = smartMeter.getYesterdayPower();
+                    history = smartMeter.getBeforeDayPower(1);
                 } catch (InterruptedException ignore) {
                     return;
                 } catch (Exception e) {
@@ -113,7 +113,7 @@ public class App {
                 try {
                     double powerOfDay = history.getAccumu30Powers().stream().reduce(0D, (a, b) -> a - b,
                             (a, b) -> a + b);
-                    ambient.send(history.getDate().atTime(0, 0, 0), powerOfDay);
+                    ambient.send(history.getTime(), powerOfDay);
 
                 } catch (Exception e) {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);
