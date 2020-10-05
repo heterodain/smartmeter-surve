@@ -4,6 +4,7 @@ import java.io.File;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Executors;
@@ -103,7 +104,7 @@ public class App {
             Runnable aggregateTask = () -> {
                 HistoryPower history = null;
                 try {
-                    history = smartMeter.getYesterdayPower();
+                    history = smartMeter.getBeforeDayPower(1);
                 } catch (InterruptedException ignore) {
                     return;
                 } catch (Exception e) {
@@ -111,9 +112,9 @@ public class App {
                 }
 
                 try {
-                    double powerOfDay = history.getAccumu30Powers().stream().reduce(0D, (a, b) -> a - b,
-                            (a, b) -> a + b);
-                    ambient.send(history.getDate().atTime(0, 0, 0), powerOfDay);
+                    List<Long> accumu30 = history.getAccumu30Powers();
+                    long powerOfDay = accumu30.get(accumu30.size() - 1) - accumu30.get(0);
+                    ambient.send(history.getDate().atTime(0, 0, 0), (double) powerOfDay);
 
                 } catch (Exception e) {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);
