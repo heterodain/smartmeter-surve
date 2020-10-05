@@ -46,16 +46,18 @@ public class Ambient {
     /**
      * チャネルにデータ送信
      * 
+     * @param ts    タイムスタンプ
      * @param datas 送信データ(最大8個)
      * @throws IOException
      */
-    public void send(Double... datas) throws IOException {
+    public void send(LocalDateTime ts, Double... datas) throws IOException {
         // 送信するJSONを構築
         var rootNode = om.createObjectNode();
         rootNode.put("writeKey", this.writeKey);
 
         var dataArrayNode = om.createArrayNode();
         var dataNode = om.createObjectNode();
+        dataNode.put("created", ts.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         for (int i = 1; i <= datas.length; i++) {
             if (datas[i - 1] != null) {
                 dataNode.put("d" + i, datas[i - 1]);

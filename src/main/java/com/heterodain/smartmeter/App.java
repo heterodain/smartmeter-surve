@@ -1,14 +1,19 @@
 package com.heterodain.smartmeter;
 
 import java.io.File;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heterodain.smartmeter.device.SmartMeter;
-import com.heterodain.smartmeter.model.Power;
+import com.heterodain.smartmeter.model.CurrentPower;
+import com.heterodain.smartmeter.model.HistoryPower;
 import com.heterodain.smartmeter.model.Settings;
 import com.heterodain.smartmeter.service.Ambient;
 
@@ -22,6 +27,8 @@ import lombok.extern.slf4j.Slf4j;
 public class App {
     // バックグラウンドタスクを動かすためのスレッドプール
     private static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(2);
+    // 定時にタスクを動かすためのタイマー
+    private static Timer timer = new Timer(false);
 
     public static void main(final String[] args) throws Exception {
         var om = new ObjectMapper();
@@ -37,7 +44,7 @@ public class App {
             smartMeter.init();
             smartMeter.connect();
 
-            var powers = new ArrayList<Power>();
+            var powers = new ArrayList<CurrentPower>();
 
             // 10秒毎にスマートメーターから電力情報読込
             Runnable readSmartMeterTask = () -> {
@@ -48,7 +55,7 @@ public class App {
                     }
 
                 } catch (InterruptedException ignore) {
-                    // NOP
+                    return;
                 } catch (Exception e) {
                     log.warn("スマートメーターへのアクセスに失敗しました。", e);
                 }
@@ -84,13 +91,38 @@ public class App {
 
                         powers.clear();
                     }
-                    ambient.send(rw, tw, w30);
+                    ambient.send(LocalDateTime.now(), rw, tw, w30);
 
                 } catch (Exception e) {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);
                 }
             };
             threadPool.scheduleWithFixedDelay(sendAmbientTask, 2, 2, TimeUnit.MINUTES);
+
+            // 1時頃に前日の電力使用量を算出してAmbientにデータ送信
+            Runnable aggregateTask = () -> {
+                HistoryPower history = null;
+                try {
+                    history = smartMeter.getYesterdayPower();
+                } catch (InterruptedException ignore) {
+                    return;
+                } catch (Exception e) {
+                    log.warn("スマートメーターへのアクセスに失敗しました。", e);
+                }
+
+                try {
+                    double powerOfDay = history.getAccumu30Powers().stream().reduce(0D, (a, b) -> a - b,
+                            (a, b) -> a + b);
+                    ambient.send(history.getDate().atTime(0, 0, 0), powerOfDay);
+
+                } catch (Exception e) {
+                    log.warn("Ambientへのデータ送信に失敗しました。", e);
+                }
+
+            };
+            LocalTime now = LocalTime.now();
+            long delay = 60 - now.getMinute() + (now.getHour() > 0 ? (24 - now.getHour()) * 60 : 0);
+            threadPool.scheduleAtFixedRate(aggregateTask, delay, 24 * 60, TimeUnit.MINUTES);
 
             // プログラムが止められるまで待つ : SIGINT(Ctrl + C)
             var wait = new Object();
@@ -101,9 +133,9 @@ public class App {
                     // NOP
                 }
             }
-        }
 
-        threadPool.shutdown();
-        threadPool.awaitTermination(15, TimeUnit.SECONDS);
+            threadPool.shutdown();
+            threadPool.awaitTermination(15, TimeUnit.SECONDS);
+        }
     }
 }

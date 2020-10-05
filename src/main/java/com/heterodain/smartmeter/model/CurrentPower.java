@@ -8,7 +8,7 @@ import lombok.Data;
  * 電力情報
  */
 @Data
-public class Power {
+public class CurrentPower {
     // 瞬時電力(W)
     private Long instantPower;
     // R相電流(0.1A)

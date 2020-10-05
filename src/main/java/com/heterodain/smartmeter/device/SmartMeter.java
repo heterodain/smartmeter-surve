@@ -6,19 +6,23 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import lombok.var;
 import lombok.extern.slf4j.Slf4j;
 
 import com.fazecast.jSerialComm.SerialPort;
-import com.heterodain.smartmeter.model.Power;
+import com.heterodain.smartmeter.model.CurrentPower;
+import com.heterodain.smartmeter.model.HistoryPower;
 
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
@@ -34,8 +38,12 @@ public class SmartMeter implements Closeable {
     private static final String SKJOIN_COMMAND = "SKJOIN %s";
     private static final String SKSENDTO_COMMAND = "SKSENDTO 1 %s 0E1A 1 %04x ";
 
-    // Echonet Lite電文
-    private static final String ECHONET_LITE_FRAME = "1081000105FF010288016203E700E800EA00";
+    // Echonet Lite電文: 瞬時電力、瞬時電流、30分積算電力取得
+    private static final String EL_READ_POWER_FRAME = "1081000105FF010288016203E700E800EA00";
+    // Echonet Lite電文: 積算履歴収集日１を1日に設定
+    private static final String EL_WRITE_HISTORY1_FRAME = "1081000105FF010288016001E50102";
+    // Echonet Lite電文: 積算履歴収集日１取得
+    private static final String EL_READ_HISTORY1_FRAME = "1081000105FF010288016201E200";
 
     // シリアルポート名
     private String serialPortName;
@@ -152,29 +160,16 @@ public class SmartMeter implements Closeable {
      * @throws InterruptedException
      * @throws DecoderException
      */
-    public Power getCurrentPower() throws IOException, InterruptedException, DecoderException {
-        writeEchonetLite(ECHONET_LITE_FRAME);
+    public synchronized CurrentPower getCurrentPower() throws IOException, InterruptedException, DecoderException {
+        writeEchonetLite(EL_READ_POWER_FRAME);
 
-        Power result = null;
-        do {
-            String data;
-            try {
-                data = readLine();
-            } catch (Exception e) {
-                if (result == null) {
-                    // スマートメーターから応答がなかった場合は再接続する
-                    connect();
-                    throw e;
-                }
-                break;
-            }
-
+        CurrentPower result = processResponse(data -> {
             if (data.startsWith("ERXUDP")) {
                 var res = data.trim().split(" ")[8];
                 var seoj = res.substring(8, 8 + 6);
                 var esv = res.substring(20, 20 + 2);
                 if ("028801".contentEquals(seoj) && "72".equals(esv)) {
-                    result = new Power();
+                    CurrentPower power = new CurrentPower();
 
                     var pos = 24;
                     while (pos < res.length()) {
@@ -186,12 +181,12 @@ public class SmartMeter implements Closeable {
                         pos += epcSize * 2;
 
                         if ("E7".equals(epc)) {
-                            result.setInstantPower(epcData.startsWith("FF") ? 0L : Long.parseLong(epcData, 16));
+                            power.setInstantPower(epcData.startsWith("FF") ? 0L : Long.parseLong(epcData, 16));
                             // 稀にマイナス値(FF...)が返ることがある。モーターなどから逆流しているのかも。
 
                         } else if ("E8".equals(epc)) {
-                            result.setInstantRAmp(Long.parseLong(epcData.substring(0, 4), 16));
-                            result.setInstantTAmp(Long.parseLong(epcData.substring(4), 16));
+                            power.setInstantRAmp(Long.parseLong(epcData.substring(0, 4), 16));
+                            power.setInstantTAmp(Long.parseLong(epcData.substring(4), 16));
                             // 1A単位でしか取得できない
 
                         } else if ("EA".equals(epc)) {
@@ -202,20 +197,65 @@ public class SmartMeter implements Closeable {
                             var min = Integer.parseInt(epcData.substring(10, 12), 16);
                             var sec = Integer.parseInt(epcData.substring(12, 14), 16);
                             var time = LocalDateTime.of(year, month, day, hour, min, sec);
-                            var power = Long.parseLong(epcData.substring(14), 16) * 100;
+                            var power30 = Long.parseLong(epcData.substring(14), 16) * 100;
                             if (!time.equals(lastAccumu30Time)) {
-                                result.setAccumu30Time(lastAccumu30Time == null ? null : time);
-                                result.setAccumu30Power(lastAccumu30Power == null ? null : power - lastAccumu30Power);
+                                power.setAccumu30Time(lastAccumu30Time == null ? null : time);
+                                power.setAccumu30Power(lastAccumu30Power == null ? null : power30 - lastAccumu30Power);
                                 lastAccumu30Time = time;
-                                lastAccumu30Power = power;
+                                lastAccumu30Power = power30;
                             }
                         }
                     }
+                    return power;
                 }
             }
-        } while (in.ready() || result == null);
+            return null;
+        });
+        return result;
+    }
 
-        log.debug("{}", result);
+    /**
+     * 前日の電力履歴取得
+     * 
+     * @return 電力履歴情報
+     * @throws IOException
+     * @throws InterruptedException
+     * @throws DecoderException
+     */
+    public synchronized HistoryPower getYesterdayPower() throws IOException, InterruptedException, DecoderException {
+        writeEchonetLite(EL_WRITE_HISTORY1_FRAME);
+        writeEchonetLite(EL_READ_HISTORY1_FRAME);
+
+        HistoryPower result = processResponse(data -> {
+            if (data.startsWith("ERXUDP")) {
+                var res = data.trim().split(" ")[8];
+                var seoj = res.substring(8, 8 + 6);
+                var esv = res.substring(20, 20 + 2);
+                if ("028801".contentEquals(seoj) && "72".equals(esv)) {
+                    HistoryPower history = new HistoryPower();
+
+                    var pos = 24;
+                    while (pos < res.length()) {
+                        var epc = res.substring(pos, pos + 2);
+                        pos += 2;
+                        var epcSize = Integer.parseInt(res.substring(pos, pos + 2), 16);
+                        pos += 2;
+                        var epcData = res.substring(pos, pos + epcSize * 2);
+                        pos += epcSize * 2;
+
+                        if ("E2".equals(epc)) {
+                            history.setDate(LocalDate.now().minusDays(1));
+                            for (var epcDataPos = 4; epcDataPos < epcSize * 2; epcDataPos += 8) {
+                                history.getAccumu30Powers()
+                                        .add(Long.parseLong(epcData.substring(epcDataPos, epcDataPos + 8), 16) * 100);
+                            }
+                        }
+                    }
+                    return history;
+                }
+            }
+            return null;
+        });
 
         return result;
     }
@@ -231,6 +271,38 @@ public class SmartMeter implements Closeable {
         if (serial != null && serial.isOpen()) {
             serial.closePort();
         }
+    }
+
+    /**
+     * スマートメーターからの応答を処理する
+     * 
+     * @param <R>  データ型
+     * @param func 応答を処理する関数
+     * @return 応答データ
+     * @throws IOException
+     * @throws InterruptedException
+     */
+    private <R> R processResponse(Function<String, R> func) throws IOException, InterruptedException {
+        R result = null;
+        do {
+            String data;
+            try {
+                data = readLine();
+            } catch (Exception e) {
+                if (result == null) {
+                    // スマートメーターから応答がなかった場合は再接続する
+                    connect();
+                    throw e;
+                }
+                break;
+            }
+            result = func.apply(data);
+
+        } while (in.ready() || result == null);
+
+        log.debug("{}", result);
+
+        return result;
     }
 
     /**
