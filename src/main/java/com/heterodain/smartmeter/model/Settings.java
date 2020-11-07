@@ -11,8 +11,10 @@ import lombok.ToString;
 public class Settings {
     // スマートメーターの設定
     private SmartMeter smartMeter;
-    // Ambientの設定
-    private Ambient ambient;
+    // Ambientの設定(2分値)
+    private Ambient ambient1;
+    // Ambientの設定(日計値)
+    private Ambient ambient2;
 
     /**
      * スマートメーターの設定情報

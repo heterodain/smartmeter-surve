@@ -6,25 +6,31 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import lombok.var;
 import lombok.extern.slf4j.Slf4j;
 
 import com.fazecast.jSerialComm.SerialPort;
-import com.heterodain.smartmeter.model.Power;
+import com.heterodain.smartmeter.model.CurrentPower;
+import com.heterodain.smartmeter.model.HistoryPower;
 
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 
 @Slf4j
 public class SmartMeter implements Closeable {
+    private static final ZoneId JST = ZoneId.of("Asia/Tokyo");
+
     // コマンド
     private static final String SKSETPWD_COMMAND = "SKSETPWD C %s";
     private static final String SKSETRBID_COMMAND = "SKSETRBID %s";
@@ -34,8 +40,12 @@ public class SmartMeter implements Closeable {
     private static final String SKJOIN_COMMAND = "SKJOIN %s";
     private static final String SKSENDTO_COMMAND = "SKSENDTO 1 %s 0E1A 1 %04x ";
 
-    // Echonet Lite電文
-    private static final String ECHONET_LITE_FRAME = "1081000105FF010288016203E700E800EA00";
+    // Echonet Lite電文: 瞬時電力、瞬時電流、30分積算電力取得
+    private static final String EL_READ_POWER_FRAME = "1081000105FF010288016203E700E800EA00";
+    // Echonet Lite電文: 積算履歴収集日１設定
+    private static final String EL_WRITE_HISTORY1_DAY_FRAME = "1081000105FF010288016001E501%02x";
+    // Echonet Lite電文: 積算電力量計測値履歴１取得
+    private static final String EL_READ_HISTORY1_FRAME = "1081000105FF010288016201E200";
 
     // シリアルポート名
     private String serialPortName;
@@ -55,9 +65,7 @@ public class SmartMeter implements Closeable {
     private String address;
 
     // 最後に取得した30分積算値の時刻
-    private LocalDateTime lastAccumu30Time;
-    // 最後に取得した30分積算値
-    private Long lastAccumu30Power;
+    private ZonedDateTime lastAccumu30Time;
 
     /**
      * コンストラクタ
@@ -152,29 +160,16 @@ public class SmartMeter implements Closeable {
      * @throws InterruptedException
      * @throws DecoderException
      */
-    public Power getCurrentPower() throws IOException, InterruptedException, DecoderException {
-        writeEchonetLite(ECHONET_LITE_FRAME);
+    public synchronized CurrentPower getCurrentPower() throws IOException, InterruptedException, DecoderException {
+        writeEchonetLite(EL_READ_POWER_FRAME);
 
-        Power result = null;
-        do {
-            String data;
-            try {
-                data = readLine();
-            } catch (Exception e) {
-                if (result == null) {
-                    // スマートメーターから応答がなかった場合は再接続する
-                    connect();
-                    throw e;
-                }
-                break;
-            }
-
+        CurrentPower result = processResponse(data -> {
             if (data.startsWith("ERXUDP")) {
                 var res = data.trim().split(" ")[8];
                 var seoj = res.substring(8, 8 + 6);
                 var esv = res.substring(20, 20 + 2);
                 if ("028801".contentEquals(seoj) && "72".equals(esv)) {
-                    result = new Power();
+                    var power = new CurrentPower();
 
                     var pos = 24;
                     while (pos < res.length()) {
@@ -186,12 +181,12 @@ public class SmartMeter implements Closeable {
                         pos += epcSize * 2;
 
                         if ("E7".equals(epc)) {
-                            result.setInstantPower(epcData.startsWith("FF") ? 0L : Long.parseLong(epcData, 16));
+                            power.setInstantPower(epcData.startsWith("FF") ? 0L : Long.parseLong(epcData, 16));
                             // 稀にマイナス値(FF...)が返ることがある。モーターなどから逆流しているのかも。
 
                         } else if ("E8".equals(epc)) {
-                            result.setInstantRAmp(Long.parseLong(epcData.substring(0, 4), 16));
-                            result.setInstantTAmp(Long.parseLong(epcData.substring(4), 16));
+                            power.setInstantRAmp(Long.parseLong(epcData.substring(0, 4), 16));
+                            power.setInstantTAmp(Long.parseLong(epcData.substring(4), 16));
                             // 1A単位でしか取得できない
 
                         } else if ("EA".equals(epc)) {
@@ -201,21 +196,68 @@ public class SmartMeter implements Closeable {
                             var hour = Integer.parseInt(epcData.substring(8, 10), 16);
                             var min = Integer.parseInt(epcData.substring(10, 12), 16);
                             var sec = Integer.parseInt(epcData.substring(12, 14), 16);
-                            var time = LocalDateTime.of(year, month, day, hour, min, sec);
-                            var power = Long.parseLong(epcData.substring(14), 16) * 100;
+                            var time = ZonedDateTime.of(year, month, day, hour, min, sec, 0, JST);
+                            var power30 = Long.parseLong(epcData.substring(14), 16) * 100;
                             if (!time.equals(lastAccumu30Time)) {
-                                result.setAccumu30Time(lastAccumu30Time == null ? null : time);
-                                result.setAccumu30Power(lastAccumu30Power == null ? null : power - lastAccumu30Power);
+                                power.setAccumu30Time(time);
+                                power.setAccumu30Power(power30);
                                 lastAccumu30Time = time;
-                                lastAccumu30Power = power;
                             }
                         }
                     }
+                    return power;
                 }
             }
-        } while (in.ready() || result == null);
+            return null;
+        });
+        return result;
+    }
 
-        log.debug("{}", result);
+    /**
+     * 以前の電力履歴取得
+     * 
+     * @param beforeDays 遡る日数
+     * @return 電力履歴情報
+     * @throws IOException
+     * @throws InterruptedException
+     * @throws DecoderException
+     */
+    public synchronized HistoryPower getBeforeDayPower(int beforeDays)
+            throws IOException, InterruptedException, DecoderException {
+        writeEchonetLite(String.format(EL_WRITE_HISTORY1_DAY_FRAME, beforeDays));
+        writeEchonetLite(EL_READ_HISTORY1_FRAME);
+
+        HistoryPower result = processResponse(data -> {
+            if (data.startsWith("ERXUDP")) {
+                var res = data.trim().split(" ")[8];
+                var seoj = res.substring(8, 8 + 6);
+                var esv = res.substring(20, 20 + 2);
+                if ("028801".contentEquals(seoj) && "72".equals(esv)) {
+                    var history = new HistoryPower();
+
+                    var pos = 24;
+                    while (pos < res.length()) {
+                        var epc = res.substring(pos, pos + 2);
+                        pos += 2;
+                        var epcSize = Integer.parseInt(res.substring(pos, pos + 2), 16);
+                        pos += 2;
+                        var epcData = res.substring(pos, pos + epcSize * 2);
+                        pos += epcSize * 2;
+
+                        if ("E2".equals(epc)) {
+                            var time = ZonedDateTime.now(JST).minusDays(beforeDay).truncatedTo(ChronoUnit.DAYS);
+                            history.setTime(time);
+                            for (var epcDataPos = 4; epcDataPos < epcSize * 2; epcDataPos += 8) {
+                                history.getAccumu30Powers()
+                                        .add(Long.parseLong(epcData.substring(epcDataPos, epcDataPos + 8), 16) * 100);
+                            }
+                        }
+                    }
+                    return history;
+                }
+            }
+            return null;
+        });
 
         return result;
     }
@@ -231,6 +273,38 @@ public class SmartMeter implements Closeable {
         if (serial != null && serial.isOpen()) {
             serial.closePort();
         }
+    }
+
+    /**
+     * スマートメーターからの応答を処理する
+     * 
+     * @param <R>  データ型
+     * @param func 応答を処理する関数
+     * @return 応答データ
+     * @throws IOException
+     * @throws InterruptedException
+     */
+    private <R> R processResponse(Function<String, R> func) throws IOException, InterruptedException {
+        R result = null;
+        do {
+            String data;
+            try {
+                data = readLine();
+            } catch (Exception e) {
+                if (result == null) {
+                    // スマートメーターから応答がなかった場合は再接続する
+                    connect();
+                    throw e;
+                }
+                break;
+            }
+            result = func.apply(data);
+
+        } while (in.ready() || result == null);
+
+        log.debug("{}", result);
+
+        return result;
     }
 
     /**

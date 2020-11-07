@@ -1,6 +1,8 @@
 package com.heterodain.smartmeter;
 
 import java.io.File;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -8,7 +10,8 @@ import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.heterodain.smartmeter.device.SmartMeter;
-import com.heterodain.smartmeter.model.Power;
+import com.heterodain.smartmeter.model.CurrentPower;
+import com.heterodain.smartmeter.model.HistoryPower;
 import com.heterodain.smartmeter.model.Settings;
 import com.heterodain.smartmeter.service.Ambient;
 
@@ -23,13 +26,20 @@ public class App {
     // バックグラウンドタスクを動かすためのスレッドプール
     private static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(2);
 
+    private static ObjectMapper om = new ObjectMapper();
+
     public static void main(final String[] args) throws Exception {
-        var om = new ObjectMapper();
         var settings = om.readValue(new File("settings.json"), Settings.class);
 
-        var ambientSettings = settings.getAmbient();
-        var ambient = new Ambient(ambientSettings.getChannelId(), ambientSettings.getReadKey(),
-                ambientSettings.getWriteKey());
+        // 2分値送信先のAmbient
+        var ambient1Settings = settings.getAmbient1();
+        var ambient1 = new Ambient(ambient1Settings.getChannelId(), ambient1Settings.getReadKey(),
+                ambient1Settings.getWriteKey());
+
+        // 日計値送信先のAmbient
+        var ambient2Settings = settings.getAmbient2();
+        var ambient2 = new Ambient(ambient2Settings.getChannelId(), ambient2Settings.getReadKey(),
+                ambient2Settings.getWriteKey());
 
         var smSettings = settings.getSmartMeter();
         try (var smartMeter = new SmartMeter(smSettings.getComPort(), smSettings.getBrouteId(),
@@ -37,7 +47,7 @@ public class App {
             smartMeter.init();
             smartMeter.connect();
 
-            var powers = new ArrayList<Power>();
+            var powers = new ArrayList<CurrentPower>();
 
             // 10秒毎にスマートメーターから電力情報読込
             Runnable readSmartMeterTask = () -> {
@@ -48,7 +58,7 @@ public class App {
                     }
 
                 } catch (InterruptedException ignore) {
-                    // NOP
+                    return;
                 } catch (Exception e) {
                     log.warn("スマートメーターへのアクセスに失敗しました。", e);
                 }
@@ -84,13 +94,38 @@ public class App {
 
                         powers.clear();
                     }
-                    ambient.send(rw, tw, w30);
+                    ambient1.send(ZonedDateTime.now(), rw, tw, w30);
 
                 } catch (Exception e) {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);
                 }
             };
             threadPool.scheduleWithFixedDelay(sendAmbientTask, 2, 2, TimeUnit.MINUTES);
+
+            // 1時頃に前日の電力使用量を算出してAmbientにデータ送信
+            Runnable aggregateTask = () -> {
+                HistoryPower yesterday = null;
+                HistoryPower today = null;
+                try {
+                    today = smartMeter.getBeforeDayPower(0);
+                    yesterday = smartMeter.getBeforeDayPower(1);
+                } catch (InterruptedException ignore) {
+                    return;
+                } catch (Exception e) {
+                    log.warn("スマートメーターへのアクセスに失敗しました。", e);
+                }
+
+                try {
+                    long yesterdayPower = yesterday.getAccumu30Powers().get(0) - today.getAccumu30Powers().get(0);
+                    ambient2.send(today.getTime(), (double) yesterdayPower);
+
+                } catch (Exception e) {
+                    log.warn("Ambientへのデータ送信に失敗しました。", e);
+                }
+            };
+            LocalTime now = LocalTime.now();
+            long delay = 60 - now.getMinute() + (now.getHour() > 0 ? (24 - now.getHour()) * 60 : 0);
+            threadPool.scheduleAtFixedRate(aggregateTask, delay, 24 * 60, TimeUnit.MINUTES);
 
             // プログラムが止められるまで待つ : SIGINT(Ctrl + C)
             var wait = new Object();
@@ -101,9 +136,9 @@ public class App {
                     // NOP
                 }
             }
-        }
 
-        threadPool.shutdown();
-        threadPool.awaitTermination(15, TimeUnit.SECONDS);
+            threadPool.shutdown();
+            threadPool.awaitTermination(15, TimeUnit.SECONDS);
+        }
     }
 }

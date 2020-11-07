@@ -13,7 +13,7 @@
     </File>
   </Appenders>
   <Loggers>
-    <Logger name="com.heterodain.smartmeter" level="debug" />
+    <Logger name="com.heterodain.smartmeter" level="trace" />
     <Root level="info">
       <AppenderRef ref="Console"/>
       <AppenderRef ref="file"/>
