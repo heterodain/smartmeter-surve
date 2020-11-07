@@ -1,11 +1,9 @@
 package com.heterodain.smartmeter;
 
 import java.io.File;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -27,16 +25,21 @@ import lombok.extern.slf4j.Slf4j;
 public class App {
     // バックグラウンドタスクを動かすためのスレッドプール
     private static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(2);
-    // 定時にタスクを動かすためのタイマー
-    private static Timer timer = new Timer(false);
+
+    private static ObjectMapper om = new ObjectMapper();
 
     public static void main(final String[] args) throws Exception {
-        var om = new ObjectMapper();
         var settings = om.readValue(new File("settings.json"), Settings.class);
 
-        var ambientSettings = settings.getAmbient();
-        var ambient = new Ambient(ambientSettings.getChannelId(), ambientSettings.getReadKey(),
-                ambientSettings.getWriteKey());
+        // 2分値送信先のAmbient
+        var ambient1Settings = settings.getAmbient1();
+        var ambient1 = new Ambient(ambient1Settings.getChannelId(), ambient1Settings.getReadKey(),
+                ambient1Settings.getWriteKey());
+
+        // 日計値送信先のAmbient
+        var ambient2Settings = settings.getAmbient2();
+        var ambient2 = new Ambient(ambient2Settings.getChannelId(), ambient2Settings.getReadKey(),
+                ambient2Settings.getWriteKey());
 
         var smSettings = settings.getSmartMeter();
         try (var smartMeter = new SmartMeter(smSettings.getComPort(), smSettings.getBrouteId(),
@@ -91,7 +94,7 @@ public class App {
 
                         powers.clear();
                     }
-                    ambient.send(LocalDateTime.now(), rw, tw, w30);
+                    ambient1.send(ZonedDateTime.now(), rw, tw, w30);
 
                 } catch (Exception e) {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);
@@ -101,9 +104,11 @@ public class App {
 
             // 1時頃に前日の電力使用量を算出してAmbientにデータ送信
             Runnable aggregateTask = () -> {
-                HistoryPower history = null;
+                HistoryPower yesterday = null;
+                HistoryPower today = null;
                 try {
-                    history = smartMeter.getBeforeDayPower(1);
+                    today = smartMeter.getBeforeDayPower(0);
+                    yesterday = smartMeter.getBeforeDayPower(1);
                 } catch (InterruptedException ignore) {
                     return;
                 } catch (Exception e) {
@@ -111,14 +116,12 @@ public class App {
                 }
 
                 try {
-                    double powerOfDay = history.getAccumu30Powers().stream().reduce(0D, (a, b) -> a - b,
-                            (a, b) -> a + b);
-                    ambient.send(history.getTime(), powerOfDay);
+                    long yesterdayPower = yesterday.getAccumu30Powers().get(0) - today.getAccumu30Powers().get(0);
+                    ambient2.send(today.getTime(), (double) yesterdayPower);
 
                 } catch (Exception e) {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);
                 }
-
             };
             LocalTime now = LocalTime.now();
             long delay = 60 - now.getMinute() + (now.getHour() > 0 ? (24 - now.getHour()) * 60 : 0);

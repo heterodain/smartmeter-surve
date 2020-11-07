@@ -1,6 +1,6 @@
 package com.heterodain.smartmeter.model;
 
-import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 
 import lombok.Data;
 
@@ -16,7 +16,7 @@ public class CurrentPower {
     // T相電流(0.1A)
     private Long instantTAmp;
     // 30分積算時刻
-    private LocalDateTime accumu30Time;
+    private ZonedDateTime accumu30Time;
     // 30分積算電力(Wh)
     private Long accumu30Power;
 }

@@ -6,7 +6,8 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -20,7 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class Ambient {
-    // JSONマッパー
+    private static final ZoneId UTC = ZoneId.of("UTC");
+
     private static ObjectMapper om = new ObjectMapper();
 
     // チャネルID
@@ -29,6 +31,9 @@ public class Ambient {
     private String readKey;
     // WRITEキー
     private String writeKey;
+
+    // 前回送信した時刻
+    private Long beforeSend;
 
     /**
      * コンストラクタ
@@ -49,15 +54,25 @@ public class Ambient {
      * @param ts    タイムスタンプ
      * @param datas 送信データ(最大8個)
      * @throws IOException
+     * @throws InterruptedException
      */
-    public void send(LocalDateTime ts, Double... datas) throws IOException {
+    public synchronized void send(ZonedDateTime ts, Double... datas) throws IOException, InterruptedException {
+        // 送信間隔が5秒以上になるように調整
+        if (beforeSend != null) {
+            long diff = System.currentTimeMillis() - beforeSend;
+            if (diff < 5000) {
+                Thread.sleep(5000 - diff);
+            }
+        }
+
         // 送信するJSONを構築
         var rootNode = om.createObjectNode();
         rootNode.put("writeKey", this.writeKey);
 
         var dataArrayNode = om.createArrayNode();
         var dataNode = om.createObjectNode();
-        dataNode.put("created", ts.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        var utcTs = ts.withZoneSameInstant(UTC).toLocalDateTime();
+        dataNode.put("created", utcTs.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         for (int i = 1; i <= datas.length; i++) {
             if (datas[i - 1] != null) {
                 dataNode.put("d" + i, datas[i - 1]);
@@ -86,6 +101,8 @@ public class Ambient {
         if (resCode != 200) {
             throw new IOException("Ambient Response Code " + resCode);
         }
+
+        beforeSend = System.currentTimeMillis();
     }
 
     /**
@@ -119,16 +136,19 @@ public class Ambient {
     /**
      * 指定期間のデータ取得
      * 
-     * @param start 開始日
-     * @param end   終了日
+     * @param start 開始日時
+     * @param end   終了日時
      * @return 指定期間のデータ
      * @throws IOException
      */
-    public List<ReadData> read(LocalDateTime start, LocalDateTime end) throws IOException {
+    public List<ReadData> read(ZonedDateTime start, ZonedDateTime end) throws IOException {
+        var utcStart = start.withZoneSameInstant(UTC).toLocalDateTime();
+        var utcEnd = end.withZoneSameInstant(UTC).toLocalDateTime();
+
         // HTTP GET
         var url = "http://54.65.206.59/api/v2/channels/" + channelId + "/data?readKey=" + readKey;
-        url += "&start=" + URLEncoder.encode(start.format(DateTimeFormatter.ISO_DATE_TIME), "UTF-8");
-        url += "&end=" + URLEncoder.encode(end.format(DateTimeFormatter.ISO_DATE_TIME), "UTF-8");
+        url += "&start=" + URLEncoder.encode(utcStart.format(DateTimeFormatter.ISO_DATE_TIME), "UTF-8");
+        url += "&end=" + URLEncoder.encode(utcEnd.format(DateTimeFormatter.ISO_DATE_TIME), "UTF-8");
         log.debug("request > " + url);
 
         var conn = (HttpURLConnection) new URL(url).openConnection();

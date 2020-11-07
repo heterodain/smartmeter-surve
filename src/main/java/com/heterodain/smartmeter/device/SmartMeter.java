@@ -6,16 +6,14 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -31,6 +29,8 @@ import org.apache.commons.codec.binary.Hex;
 
 @Slf4j
 public class SmartMeter implements Closeable {
+    private static final ZoneId JST = ZoneId.of("Asia/Tokyo");
+
     // コマンド
     private static final String SKSETPWD_COMMAND = "SKSETPWD C %s";
     private static final String SKSETRBID_COMMAND = "SKSETRBID %s";
@@ -65,9 +65,7 @@ public class SmartMeter implements Closeable {
     private String address;
 
     // 最後に取得した30分積算値の時刻
-    private LocalDateTime lastAccumu30Time;
-    // 最後に取得した30分積算値
-    private Long lastAccumu30Power;
+    private ZonedDateTime lastAccumu30Time;
 
     /**
      * コンストラクタ
@@ -171,7 +169,7 @@ public class SmartMeter implements Closeable {
                 var seoj = res.substring(8, 8 + 6);
                 var esv = res.substring(20, 20 + 2);
                 if ("028801".contentEquals(seoj) && "72".equals(esv)) {
-                    CurrentPower power = new CurrentPower();
+                    var power = new CurrentPower();
 
                     var pos = 24;
                     while (pos < res.length()) {
@@ -198,13 +196,12 @@ public class SmartMeter implements Closeable {
                             var hour = Integer.parseInt(epcData.substring(8, 10), 16);
                             var min = Integer.parseInt(epcData.substring(10, 12), 16);
                             var sec = Integer.parseInt(epcData.substring(12, 14), 16);
-                            var time = LocalDateTime.of(year, month, day, hour, min, sec);
+                            var time = ZonedDateTime.of(year, month, day, hour, min, sec, 0, JST);
                             var power30 = Long.parseLong(epcData.substring(14), 16) * 100;
                             if (!time.equals(lastAccumu30Time)) {
-                                power.setAccumu30Time(lastAccumu30Time == null ? null : time);
-                                power.setAccumu30Power(lastAccumu30Power == null ? null : power30 - lastAccumu30Power);
+                                power.setAccumu30Time(time);
+                                power.setAccumu30Power(power30);
                                 lastAccumu30Time = time;
-                                lastAccumu30Power = power30;
                             }
                         }
                     }
@@ -235,7 +232,7 @@ public class SmartMeter implements Closeable {
                 var seoj = res.substring(8, 8 + 6);
                 var esv = res.substring(20, 20 + 2);
                 if ("028801".contentEquals(seoj) && "72".equals(esv)) {
-                    HistoryPower history = new HistoryPower();
+                    var history = new HistoryPower();
 
                     var pos = 24;
                     while (pos < res.length()) {
@@ -247,8 +244,8 @@ public class SmartMeter implements Closeable {
                         pos += epcSize * 2;
 
                         if ("E2".equals(epc)) {
-                            history.setTime(LocalDateTime.now(ZoneId.of("UTC")).minusDays(beforeDay)
-                                    .truncatedTo(ChronoUnit.DAYS));
+                            var time = ZonedDateTime.now(JST).minusDays(beforeDay).truncatedTo(ChronoUnit.DAYS);
+                            history.setTime(time);
                             for (var epcDataPos = 4; epcDataPos < epcSize * 2; epcDataPos += 8) {
                                 history.getAccumu30Powers()
                                         .add(Long.parseLong(epcData.substring(epcDataPos, epcDataPos + 8), 16) * 100);
