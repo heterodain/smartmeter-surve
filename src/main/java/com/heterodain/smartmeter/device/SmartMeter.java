@@ -245,7 +245,7 @@ public class SmartMeter implements Closeable {
                         pos += epcSize * 2;
 
                         if ("E2".equals(epc)) {
-                            var time = ZonedDateTime.now(JST).minusDays(beforeDay).truncatedTo(ChronoUnit.DAYS);
+                            var time = ZonedDateTime.now(JST).minusDays(beforeDays).truncatedTo(ChronoUnit.DAYS);
                             history.setTime(time);
                             for (var epcDataPos = 4; epcDataPos < epcSize * 2; epcDataPos += 8) {
                                 history.getAccumu30Powers()
