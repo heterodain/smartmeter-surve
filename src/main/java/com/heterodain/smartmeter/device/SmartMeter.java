@@ -66,6 +66,8 @@ public class SmartMeter implements Closeable {
 
     // 最後に取得した30分積算値の時刻
     private ZonedDateTime lastAccumu30Time;
+    // 最後に取得した30分積算値
+    private Long lastAccumu30Power;
 
     /**
      * コンストラクタ
@@ -200,8 +202,9 @@ public class SmartMeter implements Closeable {
                             var power30 = Long.parseLong(epcData.substring(14), 16) * 100;
                             if (!time.equals(lastAccumu30Time)) {
                                 power.setAccumu30Time(time);
-                                power.setAccumu30Power(power30);
+                                power.setAccumu30Power(lastAccumu30Power == null ? null : power30 - lastAccumu30Power);
                                 lastAccumu30Time = time;
+                                lastAccumu30Power = power30;
                             }
                         }
                     }
