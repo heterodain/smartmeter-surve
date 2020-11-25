@@ -31,7 +31,7 @@ public class App {
     public static void main(final String[] args) throws Exception {
         var settings = om.readValue(new File("settings.json"), Settings.class);
 
-        // 2分値送信先のAmbient
+        // 1分値送信先のAmbient
         var ambient1Settings = settings.getAmbient1();
         var ambient1 = new Ambient(ambient1Settings.getChannelId(), ambient1Settings.getReadKey(),
                 ambient1Settings.getWriteKey());
@@ -65,7 +65,7 @@ public class App {
             };
             threadPool.scheduleWithFixedDelay(readSmartMeterTask, 0, 10, TimeUnit.SECONDS);
 
-            // 2分毎にAmbientにデータ送信
+            // 1分毎にAmbientにデータ送信
             Runnable sendAmbientTask = () -> {
                 try {
                     Double rw, tw, w30;
@@ -100,7 +100,7 @@ public class App {
                     log.warn("Ambientへのデータ送信に失敗しました。", e);
                 }
             };
-            threadPool.scheduleWithFixedDelay(sendAmbientTask, 2, 2, TimeUnit.MINUTES);
+            threadPool.scheduleWithFixedDelay(sendAmbientTask, 1, 1, TimeUnit.MINUTES);
 
             // 1時頃に前日の電力使用量を算出してAmbientにデータ送信
             Runnable aggregateTask = () -> {
