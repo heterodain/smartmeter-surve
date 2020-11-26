@@ -116,7 +116,7 @@ public class App {
                 }
 
                 try {
-                    long yesterdayPower = yesterday.getAccumu30Powers().get(0) - today.getAccumu30Powers().get(0);
+                    long yesterdayPower = today.getAccumu30Powers().get(0) - yesterday.getAccumu30Powers().get(0);
                     ambient2.send(today.getTime(), (double) yesterdayPower);
 
                 } catch (Exception e) {
