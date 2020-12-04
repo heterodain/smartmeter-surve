@@ -5,7 +5,7 @@
 
   <groupId>com.heterodain</groupId>
   <artifactId>smartmeter-surve</artifactId>
-  <version>1.2-SNAPSHOT</version>
+  <version>1.2</version>
 
   <name>smartmeter-surve</name>
   <url>https://github.com/heterodain/smartmeter-surve</url>
