@@ -23,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import com.fazecast.jSerialComm.SerialPort;
 import com.heterodain.smartmeter.model.CurrentPower;
 import com.heterodain.smartmeter.model.HistoryPower;
+import com.heterodain.smartmeter.model.CurrentPower.Accumu30Power;
 
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
@@ -201,8 +202,10 @@ public class SmartMeter implements Closeable {
                             var time = ZonedDateTime.of(year, month, day, hour, min, sec, 0, JST);
                             var power30 = Long.parseLong(epcData.substring(14), 16) * 100;
                             if (!time.equals(lastAccumu30Time)) {
-                                power.setAccumu30Time(time);
-                                power.setAccumu30Power(lastAccumu30Power == null ? null : power30 - lastAccumu30Power);
+                                if (lastAccumu30Power != null) {
+                                    var accumu30 = new Accumu30Power(time, power30 - lastAccumu30Power);
+                                    power.setAccumu30(accumu30);
+                                }
                                 lastAccumu30Time = time;
                                 lastAccumu30Power = power30;
                             }
@@ -349,7 +352,7 @@ public class SmartMeter implements Closeable {
         while (true) {
             var line = readLine();
             results.add(line);
-            if (Arrays.stream(aborts).map(a -> line.startsWith(a)).reduce((a, b) -> a | b).orElse(false)) {
+            if (Arrays.stream(aborts).anyMatch(a -> line.startsWith(a))) {
                 break;
             }
         }
