@@ -113,7 +113,7 @@ public class App {
                             long yesterdayPower;
                             try {
                                 HistoryPower yesterday = smartMeter.getBeforeDayPower(1);
-                                yesterdayPower = accumu30.getPower() - yesterday.getAccumu30Powers().get(0);
+                                yesterdayPower = accumu30.getTotalPower() - yesterday.getAccumu30Powers().get(0);
 
                             } catch (InterruptedException ignore) {
                                 return;

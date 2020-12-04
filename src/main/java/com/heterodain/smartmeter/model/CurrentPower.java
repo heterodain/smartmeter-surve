@@ -27,6 +27,8 @@ public class CurrentPower {
     public static class Accumu30Power {
         // 時刻
         private ZonedDateTime time;
+        // 積算電力(Wh)
+        private Long totalPower;
         // 電力(Wh)
         private Long power;
     }

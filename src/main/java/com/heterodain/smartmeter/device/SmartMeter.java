@@ -203,7 +203,7 @@ public class SmartMeter implements Closeable {
                             var power30 = Long.parseLong(epcData.substring(14), 16) * 100;
                             if (!time.equals(lastAccumu30Time)) {
                                 if (lastAccumu30Power != null) {
-                                    var accumu30 = new Accumu30Power(time, power30 - lastAccumu30Power);
+                                    var accumu30 = new Accumu30Power(time, power30, power30 - lastAccumu30Power);
                                     power.setAccumu30(accumu30);
                                 }
                                 lastAccumu30Time = time;
