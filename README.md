@@ -15,3 +15,6 @@ https://youtu.be/L80hP5f4zZ8
 
 Part.5 運用編
 https://youtu.be/Pbwp5v2TdWs
+
+電気料金把握編
+https://youtu.be/EAHJbqvbhXw
