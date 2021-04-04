@@ -15,6 +15,8 @@ public class Settings {
     private Ambient ambient1;
     // Ambientの設定(日計値)
     private Ambient ambient2;
+    // LineNotifyの設定
+    private LineNotify lineNotify;
 
     /**
      * スマートメーターの設定情報
@@ -42,5 +44,17 @@ public class Settings {
         private String readKey;
         // ライトキー
         private String writeKey;
+    }
+
+    /**
+     * LINE Notifyの設定情報
+     */
+    @Getter
+    @ToString
+    public static class LineNotify {
+        /** 通知APIのURL */
+        private String url;
+        /** トークン */
+        private String token;
     }
 }

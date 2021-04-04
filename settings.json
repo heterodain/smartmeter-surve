@@ -13,5 +13,9 @@
     "channelId": 99999,
     "readKey": "****************",
     "writeKey": "****************"
+  },
+  "lineNotify": {
+    "url": "https://notify-api.line.me/api/notify",
+    "token": "****************************************"
   }
 }

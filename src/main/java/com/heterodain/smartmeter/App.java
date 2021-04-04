@@ -1,7 +1,13 @@
 package com.heterodain.smartmeter;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.io.File;
+import java.io.OutputStreamWriter;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -23,6 +29,8 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class App {
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy年MM月dd日");
+
     // バックグラウンドタスクを動かすためのスレッドプール
     private static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(2);
 
@@ -41,6 +49,12 @@ public class App {
         var ambient2Settings = settings.getAmbient2();
         var ambient2 = new Ambient(ambient2Settings.getChannelId(), ambient2Settings.getReadKey(),
                 ambient2Settings.getWriteKey());
+
+        // LINE通知API
+        var httpConn = (HttpURLConnection) new URL(settings.getLineNotify().getUrl()).openConnection();
+        httpConn.setRequestMethod("POST");
+        httpConn.addRequestProperty("Authorization", "Bearer " + settings.getLineNotify().getToken());
+        httpConn.setDoOutput(true);
 
         // スマートメーター接続
         var smSettings = settings.getSmartMeter();
@@ -108,7 +122,7 @@ public class App {
                         // 瞬時電力と30分積算電力送信
                         ambient1.send(ZonedDateTime.now(), rw, tw, (double) accumu30.getPower());
 
-                        // 0時0分の30分積算電力を受信したら、スマートメーターから昨日の電力使用量を取得して送信
+                        // 0時0分の30分積算電力を受信したら、スマートメーターから昨日の電力使用量を取得して送信 & LINE通知
                         if (accumu30.getTime().getHour() == 0 && accumu30.getTime().getMinute() == 0) {
                             long yesterdayPower;
                             try {
@@ -122,7 +136,20 @@ public class App {
                                 return;
                             }
 
-                            ambient2.send(accumu30.getTime().minusDays(1), (double) yesterdayPower);
+                            // 日計値送信
+                            ZonedDateTime yesterday = accumu30.getTime().minusDays(1);
+                            ambient2.send(yesterday, (double) yesterdayPower);
+
+                            // LINE通知
+                            var message = String.format("%sの消費電力=%.0f Wh", DATE_FORMATTER.format(yesterday),
+                                    yesterdayPower);
+                            try (var out = new OutputStreamWriter(httpConn.getOutputStream())) {
+                                out.write("message=" + URLEncoder.encode(message, StandardCharsets.UTF_8));
+                            }
+                            var resCode = httpConn.getResponseCode();
+                            if (resCode != 200) {
+                                log.warn("LINE通知に失敗しました。statusCode={}", resCode);
+                            }
                         }
                     }
 
