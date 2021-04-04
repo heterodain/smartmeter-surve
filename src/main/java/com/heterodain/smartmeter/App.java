@@ -141,8 +141,9 @@ public class App {
                             ambient2.send(yesterday, (double) yesterdayPower);
 
                             // LINE通知
-                            var message = String.format("%sの消費電力=%.0f Wh", DATE_FORMATTER.format(yesterday),
+                            var message = String.format("%sの消費電力 %.0f Wh", DATE_FORMATTER.format(yesterday),
                                     yesterdayPower);
+                            httpConn.connect();
                             try (var out = new OutputStreamWriter(httpConn.getOutputStream())) {
                                 out.write("message=" + URLEncoder.encode(message, StandardCharsets.UTF_8));
                             }
