@@ -21,3 +21,6 @@ https://youtu.be/EAHJbqvbhXw
 
 Part.7 LINEに通知
 https://youtu.be/pkHgJ9DMXXg
+
+### Youtubeチャンネル
+https://www.youtube.com/channel/UCF3MSapjPmcyUBxzDEkMR3A
