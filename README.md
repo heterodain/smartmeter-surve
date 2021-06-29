@@ -35,14 +35,18 @@
 - Maven
 
 ## 使い方 (Usage)
-1. settings.jsonを編集して、スマートメーターとWEBサービスの接続情報を記入してください。  
+1. PC にUSBドングル(RL7023 stick-d/ips)を接続してください。  
+(Connect the USB dongle "RL7023 stick-d / ips" to your PC)
+
+2. settings.jsonを編集して、スマートメーターとWEBサービスの接続情報を記入してください。  
 (Edit settings.json and fills connect information of Smartmeter and WEB service)  
 
-2. JARモジュール生成 (Create JAR)
-```command
-mvn clean package
-```
 3. 実行 (Execute)
-```command
-java -jar smartmeter-surve-1.0.jar
-```
+    - VS Code 上で実行 (Run on VS Code)  
+    App.java を右クリックして実行してください。(Right-click on the App.java and run)
+
+    - ターミナル上で実行 (Run on terminal)
+        ```command
+        mvn clean package
+        java -jar smartmeter-surve-1.0.jar
+        ```
